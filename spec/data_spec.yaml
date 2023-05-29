@@ -1,0 +1,34 @@
+result_map:
+
+  swinging_strike: swinging_strike,
+  swinging_strike_blocked: swinging_strike,
+  foul_tip: swinging_strike,
+  bunt_foul_tipe: swinging_strike,
+  missed_bunt: swinging_strike,
+  called_strike: called_strike,
+  foul: foul,
+  foul_bunt: foul,
+  blocked_ball: ball,
+  ball: ball,
+  hit_by_pitch: hit_by_pitch,
+  hit_into_play: in_play,
+  pitchout: pitchout
+
+data_types:
+
+  numeric:
+    - sz_top
+    - sz_bot
+    - release_speed
+    - spin_axis
+    - release_spin_rate
+    - release_pos_x
+    - release_pos_z
+    - pfx_x
+    - pfx_z
+    - plate_x
+    - plate_z
+
+  categorical:
+    - stand
+    - p_throws
