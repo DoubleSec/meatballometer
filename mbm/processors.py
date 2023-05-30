@@ -53,6 +53,9 @@ class RobustIndexer:
     def __repr__(self):
         return f"RobustIndexer({[k for k in self.map.keys()]}, p_mask={self.p_mask})"
 
+    def __len__(self):
+        return len(self.map)
+
 
 class Normalizer:
     """Applies a very simple transformation to numeric data, subtracting the mean
@@ -63,7 +66,7 @@ class Normalizer:
         self.std = std
 
     def transform(self, x):
-        return torch.tensor((x - self.mean) / self.std, dtype=torch.float)
+        return torch.tensor((x - self.mean) / self.std, dtype=torch.float).unsqueeze(-1)
 
     def inverse_transform(self, x):
         return x * self.std + self.mean
@@ -112,7 +115,7 @@ class RowTransformer:
                 transformer.set_mode(mode)
 
 
-def make_spec(numeric_cols, categorical_cols):
+def make_default_spec(numeric_cols, categorical_cols):
     """This is a convenience function that only works if you only have categorical
     and numeric features. If you have different kinds of transformations to do,
     you're on your own, although hopefully this is a useful pattern."""
@@ -134,7 +137,7 @@ if __name__ == "__main__":
     with open("spec/data_spec.yaml", "r") as f:
         data_spec = yaml.load(f, yaml.CLoader)
 
-    col_spec = make_spec(
+    col_spec = make_default_spec(
         numeric_cols=data_spec["data_types"]["numeric"],
         categorical_cols=data_spec["data_types"]["categorical"],
     )
