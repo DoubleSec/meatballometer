@@ -3,7 +3,7 @@ result_map:
   swinging_strike: swinging_strike,
   swinging_strike_blocked: swinging_strike,
   foul_tip: swinging_strike,
-  bunt_foul_tipe: swinging_strike,
+  bunt_foul_tip: swinging_strike,
   missed_bunt: swinging_strike,
   called_strike: called_strike,
   foul: foul,

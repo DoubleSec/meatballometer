@@ -37,6 +37,10 @@ class CategoricalTokenizer(nn.Sequential):
         self.append(nn.LayerNorm(d_model))
         self.append(nn.ReLU())
 
+    def forward(self, x):
+        # Oh no
+        return super().forward(x).squeeze(1)
+
 
 class FTTInputLayer(nn.Module):
     """This is the simplest possible version of this. Notably:

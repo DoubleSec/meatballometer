@@ -9,7 +9,7 @@ from lightning.pytorch import Trainer
 
 from copy import deepcopy
 
-from mbm.processors import make_default_spec, RowTransformer
+from mbm.processors import make_default_spec, DataFrameTransformer, LabelIndexer
 from mbm.ftt import FTT
 from pitch_data import PitchResultDataset
 
@@ -23,6 +23,8 @@ col_spec = make_default_spec(
     numeric_cols=config["data_types"]["numeric"],
     categorical_cols=config["data_types"]["categorical"],
 )
+
+target_spec = {"result": LabelIndexer}
 
 # Setup data -------------------
 
@@ -38,20 +40,23 @@ result_cardinality = len(pitch_df["result"].unique())
 train_df = pitch_df[pitch_df.game_date < "2022-09-01"]
 validation_df = pitch_df[pitch_df.game_date >= "2022-09-01"]
 
-train_row_trans = RowTransformer(col_spec)
-train_row_trans.fit_to_data(train_df)
+train_transformer = DataFrameTransformer(col_spec)
+train_transformer.fit_to_data(train_df)
 
 # This gross thing is to manage the mode of the row transformer's transformers
-validation_row_trans = deepcopy(train_row_trans)
-validation_row_trans.set_transformer_modes("eval")
+validation_transformer = deepcopy(train_transformer)
+validation_transformer.set_transformer_modes("eval")
 
-train_ds = PitchResultDataset(train_df, train_row_trans)
+y_transformer = DataFrameTransformer(target_spec)
+y_transformer.fit_to_data(train_df)
+
+train_ds = PitchResultDataset(train_df, train_transformer, y_transformer)
 train_dl = DataLoader(
     train_ds,
     batch_size=config["training_params"]["batch_size"],
     num_workers=config["training_params"]["num_workers"],
 )
-validation_ds = PitchResultDataset(validation_df, validation_row_trans)
+validation_ds = PitchResultDataset(validation_df, validation_transformer, y_transformer)
 validation_dl = DataLoader(
     validation_ds,
     batch_size=config["training_params"]["batch_size"],
@@ -65,7 +70,7 @@ print(
 # Setup model -------------------
 
 net = FTT(
-    row_transformer=train_row_trans,
+    row_transformer=train_transformer,
     **config["net_params"],
     output_size=result_cardinality,
     optim_lr=config["training_params"]["learning_rate"],

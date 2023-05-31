@@ -1,5 +1,6 @@
 import torch
 import numpy as np
+import pandas as pd
 
 from random import random
 
@@ -15,11 +16,10 @@ class RobustIndexer:
     setting the mode to 'eval', which uses all available data."""
 
     def __init__(self, values, p_mask=0.01):
-        self.map = {"<UNK>": torch.tensor(0, dtype=torch.long)}
-
+        self.map = {"<UNK>": 0}
         for value in values:
             if value not in self.map:
-                self.map[value] = torch.tensor(len(self.map), dtype=torch.long)
+                self.map[value] = len(self.map)
 
         self.inverse_map = {v: k for k, v in self.map.items()}
 
@@ -34,15 +34,26 @@ class RobustIndexer:
             self.mode = mode
 
     def transform(self, x):
+        """For transforming multiple values at once."""
+
         if self.mode == "train":
-            return self.map[x] if random() > self.p_mask else self.map["<UNK>"]
+            rng = np.random.default_rng()
+
+            # Choose which positions are masked
+            mask = rng.random(len(x)) > self.p_mask
+            mapped_values = x.map(self.map)
+
+            return np.where(mask, mapped_values, self.map["<UNK>"]).astype("int")
 
         # If in eval mode
         else:
-            return self.map.get(x, self.map["<UNK>"])
+            return x.map(self.map)
 
     def inverse_transform(self, x):
-        return self.inverse_map["x"]
+        return self.inverse_map[x]
+
+    def __call__(self, x):
+        return self.transform(x)
 
     @classmethod
     def from_data(cls, data, p_mask=0.01):
@@ -57,6 +68,37 @@ class RobustIndexer:
         return len(self.map)
 
 
+class LabelIndexer:
+    def __init__(self, values):
+        self.map = {}
+        for value in values:
+            if value not in self.map:
+                self.map[value] = len(self.map)
+
+        self.inverse_map = {v: k for k, v in self.map.items()}
+
+    def transform(self, x):
+        return x.map(self.map)
+
+    def inverse_transform(self, x):
+        return self.inverse_map[x]
+
+    def __call__(self, x):
+        return self.transform(x)
+
+    @classmethod
+    def from_data(cls, data):
+        values = np.unique(data)
+
+        return cls(values)
+
+    def __repr__(self):
+        return f"LabelIndexer({[k for k in self.map.keys()]})"
+
+    def __len__(self):
+        return len(self.map)
+
+
 class Normalizer:
     """Applies a very simple transformation to numeric data, subtracting the mean
     and dividing by the standard deviation."""
@@ -66,10 +108,13 @@ class Normalizer:
         self.std = std
 
     def transform(self, x):
-        return torch.tensor((x - self.mean) / self.std, dtype=torch.float).unsqueeze(-1)
+        return (x - self.mean) / self.std
 
     def inverse_transform(self, x):
         return x * self.std + self.mean
+
+    def __call__(self, x):
+        return self.transform(x)
 
     @classmethod
     def from_data(cls, data):
@@ -82,32 +127,43 @@ class Normalizer:
         return f"Normalizer(mean={self.mean :.3f}, std={self.std :.3f})"
 
 
-class RowTransformer:
+class DataFrameTransformer:
     """This class collects a set of individual column transformers and can
-    apply them to a 'row'. Typically that's a row of a pandas dataframe, but
-    it should also work on a pyspark row and maybe a namedtuple.
+    apply them to a dataframe.
 
     The normal way is to provide a column spec when the object is created
     (like that made by make_spec), and then call fit_to_data on some data.
 
     If you want to use your own transformers, they must implement transform and
     from_data methods, and optionally also __repr__, inverse_transform and
-    set_mode (if you need it)."""
+    set_mode (if you need it).
+
+    While the fit_to_data method can take a spark dataframe, the transform method
+    does not. It's really intended to work with petastorm, which uses pandas for this.
+    """
 
     def __init__(self, column_spec):
         self.column_spec = column_spec
 
     def fit_to_data(self, data):
-        self.column_transformers = {
-            col: processor_type.from_data(data[col])
-            for col, processor_type in self.column_spec.items()
-        }
+        if isinstance(data, pd.DataFrame):
+            self.column_transformers = {
+                col: processor_type.from_data(data[col])
+                for col, processor_type in self.column_spec.items()
+            }
+        else:
+            # For spark
+            raise NotImplementedError("Maybe later")
 
     def transform(self, x):
-        return {
-            col: transformer.transform(x[col])
-            for col, transformer in self.column_transformers.items()
-        }
+        # Pandas DataFrame.transform should work here as far as I can tell,
+        # but it doesn't.
+        return pd.DataFrame(
+            {
+                col: self.column_transformers[col](x[col])
+                for col in self.column_transformers
+            }
+        )
 
     def set_transformer_modes(self, mode):
         for transformer in self.column_transformers.values():
@@ -134,17 +190,27 @@ if __name__ == "__main__":
     print("Reading data")
     pitch_df = pd.read_parquet("data/test_data.parquet")
 
-    with open("spec/data_spec.yaml", "r") as f:
+    with open("config/simple_config.yaml", "r") as f:
         data_spec = yaml.load(f, yaml.CLoader)
 
+    # You can use a function to do this.
     col_spec = make_default_spec(
         numeric_cols=data_spec["data_types"]["numeric"],
         categorical_cols=data_spec["data_types"]["categorical"],
     )
 
-    row_trans = RowTransformer(col_spec)
-    row_trans.fit_to_data(pitch_df)
+    # Or just make it yourself.
+    target_spec = {
+        "description": LabelIndexer,
+    }
 
-    print(row_trans.column_transformers)
+    x_trans = DataFrameTransformer(col_spec)
+    x_trans.fit_to_data(pitch_df)
 
-    print(row_trans.transform(pitch_df.iloc[0]))
+    print(x_trans.column_transformers)
+
+    y_trans = DataFrameTransformer(target_spec)
+    y_trans.fit_to_data(pitch_df)
+
+    print(x_trans.transform(pitch_df.iloc[0:10]))
+    print(y_trans.transform(pitch_df.iloc[0:10]))

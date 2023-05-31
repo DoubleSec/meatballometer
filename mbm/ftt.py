@@ -2,6 +2,7 @@ import torch
 from torch import nn
 
 import lightning.pytorch as pl
+from torchmetrics.classification import AUROC, Accuracy
 
 from .ftt_layers import FTTInputLayer, FTTOutputLayer
 
@@ -40,6 +41,12 @@ class FTT(pl.LightningModule):
         self.optim_lr = optim_lr
         self.criterion = criterion
 
+        # Logging
+        self.train_auroc = AUROC("multiclass", num_classes=output_size)
+        self.valid_auroc = AUROC("multiclass", num_classes=output_size)
+        self.train_accuracy = Accuracy("multiclass", num_classes=output_size)
+        self.valid_accuracy = Accuracy("multiclass", num_classes=output_size)
+
     def configure_optimizers(self):
         optimizer = torch.optim.AdamW(self.parameters(), lr=self.optim_lr)
         return optimizer
@@ -56,8 +63,15 @@ class FTT(pl.LightningModule):
         x, y = batch
         y_hat = self(x)
         loss = self.criterion(y_hat, y)
-        self.log(
-            "train_loss", loss, on_step=True, on_epoch=True, prog_bar=True, logger=True
+
+        self.train_auroc(y_hat, y)
+        self.train_accuracy(y_hat, y)
+        self.log_dict(
+            {
+                "train_loss": loss,
+                "train_auc": self.train_auroc,
+                "train_accuracy": self.train_accuracy,
+            }
         )
         return loss
 
@@ -65,5 +79,15 @@ class FTT(pl.LightningModule):
         x, y = batch
         y_hat = self(x)
         loss = self.criterion(y_hat, y)
-        self.log("validation_loss", loss)
+
+        self.valid_auroc(y_hat, y)
+        self.valid_accuracy(y_hat, y)
+        self.log_dict(
+            {
+                "valid_loss": loss,
+                "valid_auc": self.valid_auroc,
+                "valid_accuracy": self.valid_accuracy,
+            }
+        )
+
         return loss

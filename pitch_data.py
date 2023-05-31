@@ -5,33 +5,24 @@ from mbm.processors import RobustIndexer
 
 
 class PitchResultDataset(Dataset):
-    RESULT_TYPES = [
-        "swinging_strike",
-        "called_strike",
-        "foul",
-        "ball",
-        "hit_by_pitch",
-        "in_play",
-        "pitchout",
-    ]
-
-    def __init__(self, pitch_df, row_transformer):
+    def __init__(self, pitch_df, x_transformer, y_transformer):
         super().__init__()
 
-        self.pitch_df = pitch_df
-        self.row_transformer = row_transformer
+        self.x_transformer = x_transformer
+        self.y_transformer = y_transformer
 
-        # We're re-using the RobustIndexer, but the Robust part isn't relevant
-        # for targets.
-        self.output_indexer = RobustIndexer(self.RESULT_TYPES, p_mask=0.0)
-        self.output_indexer.set_mode("eval")
+        self.x_df = x_transformer.transform(pitch_df)
+        self.y_df = y_transformer.transform(pitch_df)
 
     def __getitem__(self, idx):
-        row = self.pitch_df.iloc[idx]
-        x = self.row_transformer.transform(row)
-        y = self.output_indexer.transform(row["result"])
+        x_row = self.x_df.iloc[[idx]]
+        y_row = self.y_df.iloc[[idx]]
+        x = {
+            col: torch.tensor(x_row[col].item()).unsqueeze(-1) for col in x_row.columns
+        }
+        y = torch.tensor(y_row["result"].item())
 
         return x, y
 
     def __len__(self):
-        return len(self.pitch_df)
+        return len(self.x_df)
