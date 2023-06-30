@@ -1,4 +1,5 @@
 .vscode/
 *.parquet
 lightning_logs/
+testing_notebooks/
 __pycache__/
